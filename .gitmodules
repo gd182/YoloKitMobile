@@ -1,0 +1,3 @@
+[submodule "vendor/YoloKit"]
+	path = vendor/YoloKit
+	url = https://github.com/gd182/YoloKit.git

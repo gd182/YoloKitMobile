@@ -27,4 +27,5 @@ qnn-runtime = { group = "com.qualcomm.qti", name = "qnn-runtime", version.ref = 
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
+android-library = { id = "com.android.library", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }

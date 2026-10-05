@@ -22,6 +22,11 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "YoloVulkanMobile"
+rootProject.name = "YoloKitMobile"
 include(":app")
+includeBuild("vendor/YoloKit") {
+    dependencySubstitution {
+        substitute(module("io.github.gd182:yolokit")).using(project(":yolokit"))
+    }
+}
  
