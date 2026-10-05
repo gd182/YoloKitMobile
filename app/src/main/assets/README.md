@@ -1,52 +1,47 @@
-# assets/
+# Модели
 
-`models.example.json` и `labels.txt` включены в репозиторий. Рабочий `models.json`
-локальный и находится в `.gitignore`, поэтому ваши модели и названия классов не
-попадут в Git. Если `models.json` отсутствует, приложение использует
-`models.example.json`. **Веса моделей (`*.param` /
-`*.bin`) не включаются** — они перечислены в `.gitignore`, чтобы исходный
-код оставался под Apache-2.0. Перед сборкой поместите файлы, на которые
-ссылаются записи в `models.json`, в эту папку.
+Положите сюда файлы моделей и укажите их имена в `models.json`.
+В репозитории есть пример конфигурации и `labels.txt`; веса нужно добавить отдельно.
 
-Для собственной конфигурации начните с копии примера:
+Все команды ниже выполняются из корня проекта.
 
 ```bash
 cp app/src/main/assets/models.example.json app/src/main/assets/models.json
 ```
 
-Приложение собирается и запускается без весов: если файл модели отсутствует,
-в статус-строке появится "load failed" и боксы не будут отрисованы.
+`models.json`, `*.param` и `*.bin` исключены из Git. Если локальной
+конфигурации нет, приложение использует `models.example.json`.
+Без файлов модели оно покажет `load failed`.
 
-## Как добавить модель
+## ncnn
 
-Экспортируйте модель в ncnn, затем скопируйте `.param` и `.bin` в
-`app/src/main/assets/`:
+Пример экспорта через Ultralytics:
 
 ```bash
 yolo export model=best.pt format=ncnn imgsz=640 half=True
 cp best_ncnn_model/model.ncnn.param best_ncnn_model/model.ncnn.bin app/src/main/assets/
 ```
 
-Добавьте запись в `models.json` с соответствующими полями:
+В записи модели укажите `param: "model.ncnn.param"` и `bin: "model.ncnn.bin"`.
+Для этого экспорта нужны `decoded: true`, `bgr: false`,
+`inputName: "in0"`, `outputName: "out0"` и `targetSize: 640`.
 
-- `"decoded": true`, `"bgr": false`, `"inputName": "in0"`, `"outputName": "out0"`
-- `"targetSize"` — должен совпадать с `imgsz` при экспорте
-- `labels` — список классов в том же порядке, что и в `best_ncnn_model/metadata.yaml`
+Если при экспорте использовался другой `imgsz`, измените `targetSize`.
+Названия классов в `labels` должны идти в том же порядке, что и в
+`best_ncnn_model/metadata.yaml`. Можно указать массив названий или имя
+текстового файла, в котором каждый класс записан с новой строки.
 
-Подробное описание полей — в корневом `README.md`. Экспорт Ultralytics YOLO
-распространяется под **AGPL-3.0** — подходит для локального тестирования, но не для распространения (см. `NOTICE`).
+## QNN
 
-Разрядность в конфигурации не указывается: приложение определяет её при загрузке
-из ncnn `.bin` или из описания входного QNN-тензора.
+Скопируйте собранный файл контекста в эту папку. В записи модели укажите
+`backend: "qnn"` и имя файла в `model`, например `model_v81.bin`.
+Полную запись можно взять из `models.example.json`.
 
----
+Инструкция по сборке контекста:
+[на русском](../../../../docs/QNN.ru.md) /
+[in English](../../../../docs/QNN.md).
 
-## QNN (NPU) context binaries / Контекст-бинари QNN
+Разрядность модели определяется при загрузке; задавать её в конфигурации не нужно.
 
-A model with `"backend": "qnn"` uses a single pre-compiled QNN context binary
-(`"model": "model_v81.bin"`) instead of `.param` + `.bin`. It is git-ignored like the other
-weights. How to build one: `docs/QNN.md`.
-
-Модель с `"backend": "qnn"` использует один заранее скомпилированный QNN context binary
-(`"model": "model_v81.bin"`) вместо пары `.param` + `.bin`. Он в `.gitignore`, как и остальные
-веса. Как собрать: `docs/QNN.ru.md`.
+Условия лицензий приведены в [LICENSE](../../../../LICENSE)
+и [NOTICE](../../../../NOTICE).

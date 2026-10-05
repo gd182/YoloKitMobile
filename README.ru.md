@@ -1,8 +1,6 @@
-<h1 align="center">VulkanSight</h1>
+<h1 align="center">YoloKitMobile</h1>
 
-<p align="center">Детекция объектов YOLO в реальном времени на Android с использованием Vulkan-бэкенда ncnn.</p>
-
-###
+<p align="center">Небольшое Android-приложение для распознавания объектов в кадре камеры с помощью YOLO.</p>
 
 <div align="center">
   <img src="https://skillicons.dev/icons?i=kotlin" height="40" alt="Kotlin logo" />
@@ -16,124 +14,105 @@
   <img src="https://skillicons.dev/icons?i=androidstudio" height="40" alt="Android Studio logo" />
 </div>
 
-###
-
 <p align="center"><a href="README.md">English</a> · <b>Русский</b></p>
 
-## О проекте
+YoloKitMobile распознаёт объекты в кадре камеры и рисует вокруг них рамки.
+Это приложение-пример для [YoloKit](https://github.com/gd182/YoloKit):
+камера работает через CameraX, а модели можно переключать прямо в приложении.
 
-VulkanSight выполняет детекцию объектов YOLO на превью камеры в реальном времени.
-Для инференса используется **ncnn** через Vulkan/CPU или опциональный нативный
-бэкенд **Qualcomm QNN** для NPU Hexagon на поддерживаемых устройствах Snapdragon.
-
-Модели задаются в одном `models.json` в ассетах приложения - добавить или
-переключить модель можно без правок кода (см. раздел «Модели»). Поддерживаются
-оба популярных варианта экспорта для ncnn: сырой DFL-head (один `output`) и
-нативный экспорт Ultralytics (`format=ncnn`).
-
-## Как это работает
-
-```
-CameraX ImageAnalysis (RGBA_8888)
-  → вертикальный ARGB_8888 Bitmap              MainActivity.kt
-  → Detector (ncnn или QNN)                    Detector.kt
-  → JNI                                        YoloNcnn.kt / QnnDetector.kt
-  → ncnn::Net или QNN graphExecute             cpp/yolo.cpp / cpp/qnn_yolo.cpp
-       letterbox → inference → decode → NMS
-  → float[x, y, w, h, label, score] per box
-  → OverlayView рисует рамки поверх превью      OverlayView.kt
-```
-
-- **Нативная часть** (`app/src/main/cpp/`) — `yolo.cpp` реализует детектор без
-  OpenCV; `yolo_jni.cpp` — JNI-мост, который управляет инстансом Vulkan.
-- **ncnn** — в репозитории есть prebuilt-релиз `android-vulkan` `20260526`,
-  распакованный по ABI в `app/src/main/cpp/ncnn/<abi>/`; CMake находит его с
-  помощью `find_package(ncnn)`.
-- **Бэкенд** — выбирается Vulkan, если `ncnn::get_gpu_count() > 0`, иначе — CPU.
-  QNN-модели показываются только при доступности QNN. Статус-строка показывает
-  выбранный бэкенд, автоматически определённую разрядность модели, FPS и задержку инференса.
-
-## Модели
-
-Все модели описаны в локальном `app/src/main/assets/models.json`. Он находится
-в `.gitignore`; для начала скопируйте `models.example.json`. Если локального
-файла нет, приложение читает отслеживаемый пример. Выпадающий список внизу
-экрана выбирает активную модель; поле `default` задаёт модель по умолчанию.
-
-Поля включают `param`, `bin`, `inputName` / `outputName`, `targetSize`,
-`decoded`, `bgr`, `confThreshold`, `nmsThreshold` и `labels`.
-
-Ключевые различия:
-
-| Поле | `decoded: false` | `decoded: true` |
-|---|---|---|
-| Источник | сырой DFL-head (single-`output`) | Ultralytics `format=ncnn` |
-| `inputName` / `outputName` | `images` / `output` | `in0` / `out0` |
-| Декод рамок | выполняется на устройстве | уже включён в граф |
-| Паддинг | до кратного 32 | до полного квадрата `targetSize` |
-| `bgr` | `true` | `false` |
-
-### Добавление модели
-
-Экспортируйте модель в ncnn, скопируйте `.param` и `.bin` в
-`app/src/main/assets/` и добавьте соответствующую запись в `models.json`.
-Убедитесь, что `targetSize` совпадает с `imgsz` при экспорте.
-
-Если рамки смещены или неправильного масштаба, сначала проверьте соответствие
-`targetSize` и `imgsz` — это самая частая причина.
-
-## NPU (Qualcomm QNN)
-
-На устройствах Snapdragon модель может выполняться на NPU Hexagon через нативный QNN C API
-(`"backend": "qnn"` в `models.json`) с заранее скомпилированным context binary.
-Настройка и конвертация: [docs/QNN.ru.md](docs/QNN.ru.md).
+Для вычислений используется ncnn с Vulkan. Если Vulkan недоступен, модель
+работает на CPU. На поддерживаемых устройствах Snapdragon можно использовать
+Qualcomm QNN и NPU Hexagon. На экране отображаются выбранный бэкенд,
+разрядность модели, FPS и время обработки.
 
 ## Сборка и запуск
 
-Требуется Android Studio (AGP 9.4.0) и NDK. `minSdk 24`, `compileSdk 37`.
+Клонируйте проект вместе с библиотекой:
+
+```bash
+git clone --recurse-submodules https://github.com/gd182/YoloKitMobile.git
+cd YoloKitMobile
+```
+
+Если проект уже скачан, выполните `git submodule update --init --recursive`.
+
+Откройте его в Android Studio. Для сборки нужны JDK 17, Android SDK 37,
+NDK 28.2.13676358 и CMake 3.22.1. В проекте используется AGP 9.4.0.
+Приложение работает на Android 7.0 и новее; собираются версии для
+`arm64-v8a`, `armeabi-v7a` и `x86_64`.
+
+Сборка и установка из терминала:
 
 ```bash
 ./gradlew :app:assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Собираемые ABI: `arm64-v8a`, `armeabi-v7a`, `x86_64`. QNN доступен только в
-`arm64-v8a` и только если `qnn.sdk.dir` или `QNN_SDK_ROOT` указывает на
-совпадающую версию QAIRT SDK; в остальных сборках продолжают работать ncnn-бэкенды.
+Весов моделей в репозитории нет. Без них приложение соберётся, но при загрузке
+модели покажет `load failed`. Для распознавания нужно добавить свои файлы.
 
-Prebuilt ncnn хранится в репозитории; веса моделей в репозиторий не попадают (как их добавить, см. `app/src/main/assets/README.md`). Приложение
-собирается и запускается без весов; при отсутствии файла модель покажет
-"load failed".
+## Добавление модели
 
-## Структура проекта
+Скопируйте пример конфигурации:
 
+```bash
+cp app/src/main/assets/models.example.json app/src/main/assets/models.json
 ```
-app/src/main/
-  java/com/example/yolovulkanmobile/
-    MainActivity.kt        настройка CameraX, кадр → bitmap, список моделей, статус-строка
-    Detector.kt            общий интерфейс детектора
-    YoloNcnn.kt            ncnn/Vulkan-реализация и разбор models.json
-    QnnDetector.kt         QNN-реализация и проверка доступности NPU
-    OverlayView.kt         рисует рамки поверх превью (маппинг center-crop)
-  cpp/
-    CMakeLists.txt         find_package(ncnn), собирает libyolovulkan.so
-    yolo.h / yolo.cpp      детектор без OpenCV: letterbox, DFL + decoded головы, NMS
-    yolo_jni.cpp           JNI-мост; владеет инстансом Vulkan
-    qnn_yolo.* / qnn_jni.cpp  QNN context binary, graphExecute и JNI-мост
-    ncnn/<abi>/            prebuilt ncnn android-vulkan 20260526
-  assets/
-    models.json            реестр моделей
-    labels.txt             имена 80 классов COCO
-    *.param / *.bin        локальные веса моделей (не коммитятся)
-  res/layout/activity_main.xml   PreviewView + OverlayView + Spinner
-docs/                      инструкции по QNN на русском и английском
-scripts/                   конвертация моделей в QNN context binary
-```
+
+Положите файлы модели в `app/src/main/assets/` и укажите их в `models.json`.
+Конфигурация и веса исключены из Git. Если `models.json` отсутствует,
+приложение читает `models.example.json`.
+
+У каждой модели есть `id`, `displayName` и `backend` (`ncnn` или `qnn`).
+В поле `default` укажите ID модели для запуска. Во время работы её можно
+сменить через выпадающий список.
+
+| Настройка | Что указать |
+|---|---|
+| `param` / `bin` | Имена файлов ncnn в assets |
+| `model` | Имя файла контекста QNN в assets |
+| `inputName` / `outputName` | Имена тензоров ncnn |
+| `targetSize` | Размер входа при экспорте (`imgsz`); по умолчанию 640 |
+| `decoded` | Декодирует ли ncnn-граф координаты рамок |
+| `bgr` | Использует ли ncnn-модель BGR вместо RGB |
+| `confThreshold` / `nmsThreshold` | Пороги уверенности и NMS |
+| `labels` | Названия классов в порядке обучения: массив или имя файла в assets |
+| `boxesNormalized` | Нормализованы ли координаты рамок QNN |
+
+Для экспорта Ultralytics `format=ncnn` укажите `decoded: true`,
+`bgr: false`, `inputName: "in0"` и `outputName: "out0"`.
+Значение `targetSize` должно совпадать с `imgsz` при экспорте.
+Если они различаются, рамки могут смещаться или иметь неверный размер.
+
+Команды экспорта есть в [README папки assets](app/src/main/assets/README.md),
+а поддерживаемые выходы моделей описаны в
+[README библиотеки](vendor/YoloKit/README.md#model-requirements).
+
+## QNN
+
+Для QNN нужен файл контекста, собранный под целевое устройство Snapdragon.
+Этот бэкенд доступен только на `arm64-v8a`. QNN-модели появляются в списке,
+только если телефон может их запускать.
+
+Для сборки с QNN укажите `qnn.sdk.dir` в `vendor/YoloKit/local.properties`
+или задайте путь к QAIRT SDK в переменной `QNN_SDK_ROOT`.
+Версия SDK должна совпадать с версией QNN runtime в YoloKit.
+Без SDK приложение собирается только с ncnn.
+
+Конвертация модели и настройка устройства описаны в [QNN.ru.md](docs/QNN.ru.md).
+
+## Код проекта
+
+В `app/` находятся интерфейс камеры, реестр моделей и отрисовка рамок.
+Библиотека детекции лежит в `vendor/YoloKit/` и подключается через Gradle
+composite build. В `scripts/` находятся скрипты конвертации моделей,
+в `docs/` — документация по QNN.
+
+Кадры CameraX преобразуются в ARGB_8888 Bitmap с учётом поворота.
+Подготовку изображения, запуск модели, декодирование координат и NMS
+выполняет YoloKit. OpenCV не используется.
 
 ## Лицензия
 
-Apache-2.0 — см. [LICENSE](LICENSE) и [NOTICE](NOTICE).
-
-Prebuilt ncnn распространяется под BSD-3-Clause. Весов моделей в репозитории
-нет. Перед распространением приложения проверьте лицензию добавленных весов.
-Компоненты Qualcomm QNN остаются под условиями поставляемой с ними лицензии.
+Apache-2.0. Условия для проекта и сторонних компонентов приведены в
+[LICENSE](LICENSE) и [NOTICE](NOTICE). У весов моделей свои лицензии.

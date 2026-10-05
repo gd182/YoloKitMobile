@@ -2,8 +2,8 @@
 *.iml
 .gradle/
 .kotlin/
-/build/
-/app/build/
+# Build output of every module (app, yolokit, ...)
+build/
 /app/.cxx/
 /captures/
 .externalNativeBuild/

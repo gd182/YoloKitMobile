@@ -1,8 +1,6 @@
-<h1 align="center">VulkanSight</h1>
+<h1 align="center">YoloKitMobile</h1>
 
-<p align="center">Real-time YOLO object detection on Android using ncnn's Vulkan backend.</p>
-
-###
+<p align="center">A small Android sample that runs YOLO object detection on the camera preview.</p>
 
 <div align="center">
   <img src="https://skillicons.dev/icons?i=kotlin" height="40" alt="Kotlin logo" />
@@ -16,118 +14,98 @@
   <img src="https://skillicons.dev/icons?i=androidstudio" height="40" alt="Android Studio logo" />
 </div>
 
-###
-
 <p align="center"><b>English</b> · <a href="README.ru.md">Русский</a></p>
 
-## Overview
+YoloKitMobile runs YOLO on the Android camera feed and draws boxes around detected
+objects. It is a sample app for [YoloKit](https://github.com/gd182/YoloKit),
+with CameraX for the camera and a model selector for switching between models.
 
-VulkanSight runs YOLO object detection on a phone's camera preview. Inference
-uses **ncnn** with Vulkan/CPU, or the optional native **Qualcomm QNN** backend
-for Hexagon NPU on supported Snapdragon devices.
+Detection runs through ncnn on Vulkan, with CPU fallback. Supported Snapdragon
+devices can also use Qualcomm QNN on the Hexagon NPU. The app shows the active
+backend, model precision, FPS, and inference time.
 
-Models are configurable from a single `models.json` in the app assets — no
-code changes are required to add or switch a model (see the Models section).
-Both common ncnn export styles are supported: raw DFL head (single `output`) and
-Ultralytics' native `format=ncnn` export.
+## Build and run
 
-## Architecture
+Clone the app with its YoloKit submodule:
 
-```
-CameraX ImageAnalysis (RGBA_8888)
-  → upright ARGB_8888 Bitmap                    MainActivity.kt
-  → Detector (ncnn or QNN)                      Detector.kt
-  → JNI                                         YoloNcnn.kt / QnnDetector.kt
-  → ncnn::Net or QNN graphExecute               cpp/yolo.cpp / cpp/qnn_yolo.cpp
-       letterbox → inference → decode → NMS
-  → float[x, y, w, h, label, score] per box
-  → OverlayView draws boxes over the preview    OverlayView.kt
+```bash
+git clone --recurse-submodules https://github.com/gd182/YoloKitMobile.git
+cd YoloKitMobile
 ```
 
-- **Native** (`app/src/main/cpp/`) — `yolo.cpp` implements the detector
-  without OpenCV; `yolo_jni.cpp` is the JNI bridge and manages the Vulkan
-  instance (`JNI_OnLoad` / `JNI_OnUnload`).
-- **ncnn** — prebuilt `android-vulkan` release `20260526` is tracked per ABI
-  under `app/src/main/cpp/ncnn/<abi>/`; CMake finds it via `find_package(ncnn)`.
-- **Backend selection** — uses Vulkan if `ncnn::get_gpu_count() > 0`, otherwise
-  falls back to CPU. QNN models are shown only when QNN is available. The UI
-  status line shows backend, detected model precision, FPS and inference latency.
+For an existing clone, run `git submodule update --init --recursive`.
 
-## Models
+Open the project in Android Studio. You will need JDK 17, Android SDK 37,
+NDK 28.2.13676358, and CMake 3.22.1. The project uses AGP 9.4.0 and supports
+Android 7.0 and newer. It builds for `arm64-v8a`, `armeabi-v7a`, and `x86_64`.
 
-Models are declared in the local `app/src/main/assets/models.json`. It is
-git-ignored; copy `models.example.json` to create it. If the local file is
-absent, the app reads the tracked example. The bottom dropdown selects the
-active model; `default` sets which model loads at startup.
-
-```jsonc
-{
-  "default": "coco-n",
-  "models": [ ... ]
-}
-```
-
-Example fields include `param`, `bin`, `inputName` / `outputName`, `targetSize`,
-`decoded`, `bgr`, `confThreshold`, `nmsThreshold` and `labels`.
-
-Key differences:
-
-| Field | `decoded: false` | `decoded: true` |
-|---|---|---|
-| Source | raw DFL head (single-`output`) | Ultralytics `format=ncnn` |
-| `inputName` / `outputName` | `images` / `output` | `in0` / `out0` |
-| Box decode | performed on-device | baked into the graph |
-| Padding | padded to multiple of 32 | padded to full `targetSize` square |
-| `bgr` | `true` | `false` |
-
-### Adding your own model
-
-Export an ncnn model, copy the `.param` / `.bin` files into `app/src/main/assets/`
-and add an entry to `models.json` with matching fields. Ensure `targetSize`
-matches the export `imgsz`.
-
-If boxes are shifted or scaled incorrectly, check that `targetSize` equals the
-export `imgsz` — this is the most common cause.
-
-## NPU (Qualcomm QNN)
-
-For Snapdragon devices a model can run on the Hexagon NPU through the native QNN C API
-(`"backend": "qnn"` in `models.json`) using a pre-compiled context binary. Setup and
-conversion steps: [docs/QNN.md](docs/QNN.md).
-
-## Build & run
-
-Requires Android Studio (AGP 9.4.0) and the NDK. `minSdk 24`, `compileSdk 37`.
+To build and install from the terminal:
 
 ```bash
 ./gradlew :app:assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Built ABIs: `arm64-v8a`, `armeabi-v7a`, `x86_64`. QNN is available only in the
-`arm64-v8a` build and only when `qnn.sdk.dir` or `QNN_SDK_ROOT` points to a
-matching QAIRT SDK; all other builds retain the ncnn backends.
+Model weights are not included. Without them the app builds, but detection
+reports `load failed` until you add a model.
 
-Model weights are intentionally not committed (see
-`app/src/main/assets/README.md`) - the app builds without them; a missing
-model file results in a "load failed" status.
+## Add a model
 
-## Project layout
+Copy the example configuration:
 
-```
-app/src/main/
-  java/com/example/yolovulkanmobile/
-  cpp/
-  assets/
-  res/
+```bash
+cp app/src/main/assets/models.example.json app/src/main/assets/models.json
 ```
 
-See in-source files for details.
+Put your model files in `app/src/main/assets/` and edit `models.json` to match.
+Both the configuration and weights are ignored by Git. If `models.json` is
+missing, the app reads `models.example.json`.
+
+Each model has an `id`, a `displayName`, and a `backend` (`ncnn` or `qnn`).
+Set `default` to the ID of the model you want to load first. You can switch
+models from the dropdown in the app.
+
+| Setting | Value |
+|---|---|
+| `param` / `bin` | ncnn filenames in assets |
+| `model` | QNN context binary filename in assets |
+| `inputName` / `outputName` | ncnn tensor names |
+| `targetSize` | Export input size (`imgsz`); defaults to 640 |
+| `decoded` | Whether the ncnn graph decodes boxes |
+| `bgr` | Whether the ncnn input uses BGR rather than RGB |
+| `confThreshold` / `nmsThreshold` | Confidence and NMS thresholds |
+| `labels` | Class names in training order, as an array or an asset filename |
+| `boxesNormalized` | Whether QNN box coordinates are normalized |
+
+For Ultralytics `format=ncnn`, use `decoded: true`, `bgr: false`,
+`inputName: "in0"`, and `outputName: "out0"`. Set `targetSize` to the
+`imgsz` used during export. A mismatch can cause shifted or incorrectly sized boxes.
+
+See the [assets README](app/src/main/assets/README.md) for export commands
+and [YoloKit](vendor/YoloKit/README.md#model-requirements) for supported model outputs.
+
+## QNN
+
+QNN needs a context binary built for the target Snapdragon device and is
+available only on `arm64-v8a`. Models using QNN appear in the dropdown only
+when the backend is available on the phone.
+
+To compile QNN support, set `qnn.sdk.dir` in `vendor/YoloKit/local.properties`,
+or set `QNN_SDK_ROOT` to your QAIRT SDK directory. The SDK must match the QNN
+runtime version used by YoloKit. Without the SDK, the app builds with ncnn only.
+
+The conversion and device setup are covered in [QNN.md](docs/QNN.md).
+
+## Source
+
+`app/` contains the camera UI, model registry, and overlay.
+`vendor/YoloKit/` is the detector library, connected through a Gradle composite
+build. Model conversion scripts are in `scripts/`; QNN documentation is in `docs/`.
+
+CameraX frames are converted to upright ARGB_8888 bitmaps before detection.
+YoloKit handles image padding, inference, box decoding, and NMS without OpenCV.
 
 ## License
 
-Apache-2.0 - see [LICENSE](LICENSE) and [NOTICE](NOTICE).
-
-The included ncnn prebuilt is BSD-3-Clause. Model weights are not part of this
-repository. Check the license of any weights you add before redistributing the
-app. Qualcomm QNN components remain subject to their bundled license terms.
+Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE) for project and
+third-party terms. Model weights have their own licenses.
