@@ -2,9 +2,9 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-IMAGE="vulkansight-qnn:ubuntu24.04"
-IMAGE_X86="vulkansight-qnn-x86:ubuntu24.04-v2"
-CACHE="${VULKANSIGHT_CACHE:-$HOME/.cache/vulkansight-qnn}"
+IMAGE="yolokitmobile-qnn:ubuntu24.04"
+IMAGE_X86="yolokitmobile-qnn-x86:ubuntu24.04-v2"
+CACHE="${YOLOKITMOBILE_CACHE:-$HOME/.cache/yolokitmobile-qnn}"
 
 MODEL=""
 ARCH=""
@@ -480,7 +480,7 @@ prepare_on_x86() {
 
 prepare_on_device() {
     device_connected || die "no phone connected (adb devices)"
-    local ver="${ARCH#v}" dir=/data/local/tmp/vulkansight_qnn
+    local ver="${ARCH#v}" dir=/data/local/tmp/yolokitmobile_qnn
     local libs="$SDK/lib/aarch64-android" skel="$SDK/lib/hexagon-$ARCH/unsigned/libQnnHtpV${ARCH#v}Skel.so"
     local dlc file
     dlc="$(cat "$WORK/dlc.path")"

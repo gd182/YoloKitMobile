@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CACHE="${VULKANSIGHT_CACHE:-$HOME/.cache/vulkansight-qnn}"
+CACHE="${YOLOKITMOBILE_CACHE:-$HOME/.cache/yolokitmobile-qnn}"
 MODEL=""
 ARCH="v81"
 IMGSZ=640
