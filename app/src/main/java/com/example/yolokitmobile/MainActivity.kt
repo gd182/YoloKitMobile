@@ -38,6 +38,7 @@ class MainActivity : AppCompatActivity() {
     @Volatile private var modelIndex = 0
     @Volatile private var kit: YoloKit? = null
     @Volatile private var loadError: String? = null
+    @Volatile private var running = true
     private var spinnerUserAction = false
     private var lastFpsTs = 0L
     private var frames = 0
@@ -61,6 +62,7 @@ class MainActivity : AppCompatActivity() {
         modelIndex = models.indexOfFirst { it.id == defaultId }.coerceAtLeast(0)
 
         setupModelSpinner()
+        binding.toggleButton.setOnClickListener { toggleDetector() }
         loadModel(modelIndex)
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
@@ -113,10 +115,12 @@ class MainActivity : AppCompatActivity() {
             kit = null
             val result = YoloKit.create(applicationContext, model.config)
             kit = result.getOrNull()
+            running = kit != null
             loadError = result.exceptionOrNull()?.let { "load failed: ${model.displayName}\n${it.message}" }
             loadError?.let { Log.e("MainActivity", it) }
             switching.set(false)
             runOnUiThread {
+                binding.toggleButton.setText(R.string.stop_detector)
                 binding.overlay.setResults(emptyList(), 1, 1)
                 binding.statusText.text = kit?.let { "${model.displayName}\n${it.backendLabel}" } ?: loadError
             }
@@ -153,9 +157,41 @@ class MainActivity : AppCompatActivity() {
         }, ContextCompat.getMainExecutor(this))
     }
 
+    /** Stops or restarts the current detector without reloading the model. */
+    private fun toggleDetector() {
+        analysisExecutor.execute {
+            val current = kit ?: return@execute
+            if (running) {
+                running = false
+                current.stop(releaseGpu = true)
+                runOnUiThread {
+                    binding.overlay.setResults(emptyList(), 1, 1)
+                    binding.toggleButton.setText(R.string.start_detector)
+                    binding.statusText.text = "stopped"
+                }
+            } else {
+                current.start().fold(
+                    onSuccess = {
+                        running = true
+                        runOnUiThread {
+                            binding.toggleButton.setText(R.string.stop_detector)
+                            binding.statusText.text = "${models[modelIndex].displayName}\n${current.backendLabel}"
+                        }
+                    },
+                    onFailure = { t ->
+                        Log.e("MainActivity", "restart failed", t)
+                        runOnUiThread {
+                            binding.statusText.text = "restart failed\n${t.message}"
+                        }
+                    },
+                )
+            }
+        }
+    }
+
     private fun analyze(image: ImageProxy) {
         val current = kit
-        if (current == null || switching.get() || !busy.compareAndSet(false, true)) {
+        if (current == null || !running || switching.get() || !busy.compareAndSet(false, true)) {
             image.close()
             return
         }
