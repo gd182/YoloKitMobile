@@ -52,18 +52,32 @@ object ModelRegistry {
                 Backend.QNN
             }
             else -> {
-                builder.ncnn(
-                    param = o.getString("param"),
-                    bin = o.getString("bin"),
-                    decoded = o.optBoolean("decoded", false),
-                    inputName = o.optString("inputName", if (o.optBoolean("decoded")) "in0" else "images"),
-                    outputName = o.optString("outputName", if (o.optBoolean("decoded")) "out0" else "output"),
-                ).rgbOrder(!o.optBoolean("bgr", true))
+                val paramName = o.getString("param")
+                val binName = o.getString("bin")
+                val decoded = o.optBoolean("decoded", false)
+                val inputName = o.optString("inputName", if (decoded) "in0" else "images")
+                val outputName = o.optString("outputName", if (decoded) "out0" else "output")
+                // "loadAsBytes" passes the files as byte arrays, the way an app would pass decrypted models.
+                val ncnnBuilder = if (o.optBoolean("loadAsBytes", false)) {
+                    builder.ncnn(
+                        param = readAsset(context, paramName),
+                        bin = readAsset(context, binName),
+                        decoded = decoded,
+                        inputName = inputName,
+                        outputName = outputName,
+                    )
+                } else {
+                    builder.ncnn(paramName, binName, decoded, inputName, outputName)
+                }
+                ncnnBuilder.rgbOrder(!o.optBoolean("bgr", true))
                 Backend.NCNN
             }
         }
         return SampleModel(id, name, backend, builder.build())
     }
+
+    private fun readAsset(context: Context, name: String): ByteArray =
+        context.assets.open(name).use { it.readBytes() }
 
     private fun readLabels(context: Context, node: Any): List<String> = when (node) {
         is JSONArray -> (0 until node.length()).map { node.getString(it) }
