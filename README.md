@@ -16,94 +16,220 @@
 
 <p align="center"><b>English</b> · <a href="README.ru.md">Русский</a></p>
 
-YoloKitMobile runs YOLO on the Android camera feed and draws boxes around detected
-objects. It is a sample app for [YoloKit](https://github.com/gd182/YoloKit),
-with CameraX for the camera and a model selector for switching between models.
+YoloKitMobile is a camera app for trying YOLO models on Android. It uses
+[CameraX](https://developer.android.com/media/camera/camerax) for the camera and
+[YoloKit](https://github.com/gd182/YoloKit) for detection, then draws class names,
+confidence scores, and boxes over the preview.
 
-Detection runs through ncnn on Vulkan, with CPU fallback. Supported Snapdragon
-devices can also use Qualcomm QNN on the Hexagon NPU. The app shows the active
-backend, model precision, FPS, and inference time.
+ncnn runs on Vulkan when available and falls back to CPU. Compatible Snapdragon
+devices can also run a QNN context binary on the Hexagon NPU. The app lets you
+switch models, stop and restart detection, and view the backend, model precision,
+FPS, and time spent in `detect()`.
 
-## Build and run
+## Install or build
 
-Clone the app with its YoloKit submodule:
+Application releases contain version notes and source code, not a ready-to-use
+APK with YOLO model weights, because of the licensing terms of the models used
+by this project. See [Releases](https://github.com/gd182/YoloKitMobile/releases)
+for the version history. Build the app locally with your own model files.
+Weights are not stored in this repository, and the app does not download or
+import models at runtime.
+
+For a local build, clone the app with its library submodule:
 
 ```bash
 git clone --recurse-submodules https://github.com/gd182/YoloKitMobile.git
 cd YoloKitMobile
 ```
 
-For an existing clone, run `git submodule update --init --recursive`.
+If you already cloned it, run:
 
-Open the project in Android Studio. You will need JDK 17, Android SDK 37,
-NDK 28.2.13676358, and CMake 3.22.1. The project uses AGP 9.4.0 and supports
-Android 7.0 and newer. It builds for `arm64-v8a`, `armeabi-v7a`, and `x86_64`.
+```bash
+git submodule update --init --recursive
+```
 
-To build and install from the terminal:
+Open the project in Android Studio with support for AGP 9.4.0. Install Android
+SDK 37, NDK 28.2.13676358, and CMake 3.22.1. Use the included Gradle wrapper
+(9.6.0). The app's Gradle daemon criteria request JDK 25; Gradle can provision
+that toolchain. Java source and target compatibility remain 17.
+See [daemon settings](gradle/gradle-daemon-jvm.properties) and
+[app build settings](app/build.gradle.kts) for the exact configuration.
+
+The app supports Android 7.0 and newer and builds for `arm64-v8a`,
+`armeabi-v7a`, and `x86_64`. QNN is arm64-only.
+
+### Library revision
+
+The app uses `includeBuild("vendor/YoloKit")`, so it builds against the
+checked-in submodule, not a sibling clone or a downloaded AAR.
+[The local library README](vendor/YoloKit/README.md) describes that revision;
+[the YoloKit repository](https://github.com/gd182/YoloKit) contains newer work.
+
+### Build commands
+
+Add your model files and configuration as described below, then build and install:
 
 ```bash
 ./gradlew :app:assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Model weights are not included. Without them the app builds, but detection
-reports `load failed` until you add a model.
+For an explicit ncnn-only native build and lint check:
 
-## Add a model
+```bash
+./gradlew -Pqnn.sdk.dir= :app:assembleDebug :app:lintDebug
+```
 
-Copy the example configuration:
+The [CI workflow](.github/workflows/android.yml) runs this ncnn-only build and
+uploads a debug APK artifact. It does not publish a release or validate QNN on
+a phone. A release APK needs signing; see
+[Android app signing](https://developer.android.com/studio/publish/app-signing).
+
+## Add models to the APK
+
+All models are loaded from `app/src/main/assets/`. Copy the configuration
+template and replace the placeholder filenames and labels:
 
 ```bash
 cp app/src/main/assets/models.example.json app/src/main/assets/models.json
 ```
 
-Put your model files in `app/src/main/assets/` and edit `models.json` to match.
-Both the configuration and weights are ignored by Git. If `models.json` is
-missing, the app reads `models.example.json`.
+For example, an Ultralytics ncnn detector with two classes:
 
-Each model has an `id`, a `displayName`, and a `backend` (`ncnn` or `qnn`).
-Set `default` to the ID of the model you want to load first. You can switch
-models from the dropdown in the app.
+```json
+{
+  "default": "my-model",
+  "models": [
+    {
+      "id": "my-model",
+      "displayName": "My YOLO model",
+      "backend": "ncnn",
+      "param": "model.ncnn.param",
+      "bin": "model.ncnn.bin",
+      "inputName": "in0",
+      "outputName": "out0",
+      "targetSize": 640,
+      "decoded": true,
+      "bgr": false,
+      "confThreshold": 0.25,
+      "nmsThreshold": 0.45,
+      "labels": ["person", "car"]
+    }
+  ]
+}
+```
 
-| Setting | Value |
+Place `model.ncnn.param` and `model.ncnn.bin` beside `models.json`.
+Labels must match your model, not this example. The `default` field is a model
+ID; if it is absent or not in the usable list, the app selects the first model.
+
+`models.json` and weight files are ignored by Git but still included in the
+APK when present at build time. If the local registry is absent, the app reads
+[models.example.json](app/src/main/assets/models.example.json). That file is a
+template, not a bundled working model.
+
+### Configuration fields
+
+| Field | Meaning and default |
 |---|---|
-| `param` / `bin` | ncnn filenames in assets |
-| `model` | QNN context binary filename in assets |
-| `inputName` / `outputName` | ncnn tensor names |
-| `targetSize` | Export input size (`imgsz`); defaults to 640 |
-| `decoded` | Whether the ncnn graph decodes boxes |
-| `bgr` | Whether the ncnn input uses BGR rather than RGB |
-| `confThreshold` / `nmsThreshold` | Confidence and NMS thresholds |
-| `labels` | Class names in training order, as an array or an asset filename |
-| `boxesNormalized` | Whether QNN box coordinates are normalized |
+| `id` | Model identifier used by `default` |
+| `displayName` | Dropdown label; defaults to `id` |
+| `backend` | `ncnn` (default) or `qnn` |
+| `param` / `bin` | Required ncnn asset filenames |
+| `model` | Required QNN context binary asset filename |
+| `targetSize` | ncnn export input size, a positive multiple of 32; defaults to 640 |
+| `decoded` | ncnn box decoding in the graph; defaults to `false` |
+| `inputName` / `outputName` | `images` / `output`, or `in0` / `out0` with `decoded: true` |
+| `bgr` | ncnn pixel order; defaults to `true`, so set `false` for an RGB export |
+| `confThreshold` / `nmsThreshold` | Defaults to 0.25 / 0.45 |
+| `labels` | Required class-name array or asset filename, one class per line |
+| `boxesNormalized` | QNN boxes in the 0–1 range; defaults to `false` |
+| `loadAsBytes` | ncnn assets read into `ByteArray`; defaults to `false` |
 
-For Ultralytics `format=ncnn`, use `decoded: true`, `bgr: false`,
-`inputName: "in0"`, and `outputName: "out0"`. Set `targetSize` to the
-`imgsz` used during export. A mismatch can cause shifted or incorrectly sized boxes.
+`targetSize` must match the ncnn export's `imgsz`. QNN reads its actual input
+shape from the context binary. For Ultralytics ncnn exports, explicitly use
+`decoded: true`, `bgr: false`, `inputName: "in0"`, and `outputName: "out0"`.
 
-See the [assets README](app/src/main/assets/README.md) for export commands
-and [YoloKit](vendor/YoloKit/README.md#model-requirements) for supported model outputs.
+`loadAsBytes` demonstrates memory-based loading, such as the path an app
+would use after decryption. It does not encrypt models, load external files,
+or apply to QNN entries in this sample.
 
-## QNN
+[The assets README](app/src/main/assets/README.md) contains export commands and
+full ncnn and QNN examples. Supported outputs are listed in
+[YoloKit's model requirements](vendor/YoloKit/README.md#model-requirements).
 
-QNN needs a context binary built for the target Snapdragon device and is
-available only on `arm64-v8a`. Models using QNN appear in the dropdown only
-when the backend is available on the phone.
+## Use the camera
 
-To compile QNN support, set `qnn.sdk.dir` in `vendor/YoloKit/local.properties`,
-or set `QNN_SDK_ROOT` to your QAIRT SDK directory. The SDK must match the QNN
-runtime version used by YoloKit. Without the SDK, the app builds with ncnn only.
+Grant camera permission and choose a model from the dropdown. The app uses
+the rear camera. The overlay shows the class name and confidence for each box.
 
-The conversion and device setup are covered in [QNN.md](docs/QNN.md).
+**Stop** unloads the detector and, for ncnn, requests release of Vulkan resources.
+The camera preview stays active. **Start** reloads the same model, so resuming
+can take time. Selecting another model closes the previous detector and loads
+the new one.
 
-## Source
+The status shows the active backend and detected precision. FPS counts processed
+frames; the displayed time measures `detect()`, not the full camera pipeline.
 
-`app/` contains the camera UI, model registry, and overlay.
-`vendor/YoloKit/` is the detector library, connected through a Gradle composite
-build. Model conversion scripts are in `scripts/`; QNN documentation is in `docs/`.
+## QNN on Snapdragon
 
-CameraX frames are converted to upright ARGB_8888 bitmaps before detection.
-YoloKit handles image padding, inference, box decoding, and NMS without OpenCV.
+QNN needs both native SDK support and a context binary compatible with the
+phone's HTP architecture. Configure QAIRT 2.50.0 in
+`vendor/YoloKit/local.properties`:
+
+```properties
+qnn.sdk.dir=/path/to/QAIRT/2.50.0
+```
+
+You can also set `QNN_SDK_ROOT` or pass `-Pqnn.sdk.dir=/path/to/QAIRT/2.50.0`.
+The directory must contain `include/QNN/QnnInterface.h`. SDK headers,
+conversion tools, and the library's Maven runtime must use matching versions.
+
+Add an entry with `backend: "qnn"`, `model`, and the correct `labels`.
+QNN entries are shown only when YoloKit's device/build availability check passes.
+This is not model compatibility detection: a wrong context binary can still
+fail to load, and models are not selected by SoC automatically.
+
+Conversion and device setup:
+[QNN guide](docs/QNN.md) /
+[Russian guide](docs/QNN.ru.md).
+
+Scripts:
+[macOS / connected phone](scripts/build_qnn_model.sh) /
+[Ubuntu x86_64](scripts/build_qnn_model_ubuntu_x86.sh).
+Run each script with `--help` for its options.
+
+## Troubleshooting
+
+| Symptom | What to check |
+|---|---|
+| `load failed` | Model files included in APK assets, filenames, labels, and export settings |
+| QNN missing from the dropdown | arm64 Qualcomm device and QNN compiled into the library |
+| QNN model fails after appearing in the list | Runtime libraries, HTP architecture, and SDK version of the binary |
+| Shifted boxes or incorrect classes | Input size, export format, color order, and label order |
+| `restart failed` | Loading error in the status line; the detector remains stopped |
+
+Logs are available with:
+
+```bash
+adb logcat -s MainActivity YoloNcnn QnnYolo
+```
+
+## Code and related projects
+
+[MainActivity.kt](app/src/main/java/com/example/yolokitmobile/MainActivity.kt)
+handles CameraX, model switching, and the processing thread.
+[ModelRegistry.kt](app/src/main/java/com/example/yolokitmobile/ModelRegistry.kt)
+turns the JSON into YoloKit configuration.
+[OverlayView.kt](app/src/main/java/com/example/yolokitmobile/OverlayView.kt)
+maps detections onto the cropped preview.
+
+Camera frames are converted to upright ARGB_8888 bitmaps. YoloKit handles
+padding, inference, decoding, and NMS without OpenCV. Its API and AAR integration
+are documented in [YoloKit](https://github.com/gd182/YoloKit) and
+[the AAR guide](https://github.com/gd182/YoloKit/blob/main/docs/AAR.md).
+Library releases will include an AAR without model weights; see
+[YoloKit Releases](https://github.com/gd182/YoloKit/releases).
 
 ## License
 

@@ -3,12 +3,12 @@
 🇬🇧 [English version](QNN.md)
 
 Весь граф YOLO выполняется на NPU Hexagon (HTP) через **нативный QNN C API**
-(`app/src/main/cpp/qnn_yolo.cpp`): заранее скомпилированный *context binary* грузится один
+([нативный код YoloKit](../vendor/YoloKit/yolokit/src/main/cpp/qnn_yolo.cpp)): заранее скомпилированный файл контекста QNN загружается один
 раз, дальше каждый кадр — один `graphExecute`. Без прослойки LiteRT/TFLite, без CPU-частей
 графа, без компиляции на устройстве.
 
 - Пре- и постпроцессинг (letterbox, деквантизация, декод, NMS) — на C++.
-- Размер входа, layout (NHWC/NCHW), тип данных и квантизация читаются из бинаря.
+- Размер входа, формат данных (NHWC/NCHW), тип данных и параметры квантизации читаются из файла контекста.
 - Поддерживаемые типы ввода/вывода: FP32, FP16, INT8/UINT8, INT16/UINT16 (scale/offset).
 - Выход может быть одним декодированным тензором Ultralytics `[1, 4+nc, N]` /
   `[1, N, 4+nc]` либо раздельными `boxes` `[1,4,N]` и `scores` `[1,nc,N]`:
@@ -20,20 +20,20 @@
 
 | Компонент | Откуда |
 |---|---|
-| Runtime-библиотеки (`libQnnHtp`, `libQnnHtpV*Stub/Skel`, `libQnnSystem`) | Maven `com.qualcomm.qti:qnn-runtime`, версия `qnn` в `gradle/libs.versions.toml` |
-| Заголовки (только для сборки) | QAIRT SDK, путь в `local.properties` |
+| Runtime-библиотеки (`libQnnHtp`, `libQnnHtpV*Stub/Skel`, `libQnnSystem`) | Maven `com.qualcomm.qti:qnn-runtime`, версия `qnn` в `vendor/YoloKit/gradle/libs.versions.toml` |
+| Заголовки (только для сборки) | QAIRT SDK, путь в `vendor/YoloKit/local.properties` |
 | Инструменты конвертации | QAIRT SDK (запускает `scripts/build_qnn_model.sh`) |
 | Context binary | по одному на архитектуру HTP, собирает скрипт |
 
-**Версия SDK, которым собран бинарь, должна совпадать с версией runtime** (`qnn` в
-`libs.versions.toml`, сейчас `2.50.0`). Если у вас SDK другой версии — поменяйте `qnn` на
-такую же, иначе `contextCreateFromBinary` упадёт.
+**Версия SDK, которым собран файл контекста, должна совпадать с версией runtime** (`qnn` в
+`vendor/YoloKit/gradle/libs.versions.toml`, сейчас `2.50.0`). Если у вас SDK другой версии — поменяйте `qnn` библиотеки на
+такую же, иначе `contextCreateFromBinary` завершится с ошибкой.
 
 ## 1. SDK и Gradle
 
 Установите QAIRT SDK:
 <https://www.qualcomm.com/developer/software/qualcomm-ai-engine-direct-sdk> (нужен
-Qualcomm ID и принятие лицензии). Затем в `local.properties` (в `.gitignore`):
+Qualcomm ID и принятие лицензии). Затем в `vendor/YoloKit/local.properties` (в `.gitignore`):
 
 ```
 qnn.sdk.dir=/путь/к/Qualcomm/AIStack/QAIRT/2.50.0
@@ -68,10 +68,10 @@ scripts/build_qnn_model_ubuntu_x86.sh --sdk /полный/путь/к/QAIRT/2.50
 Версия SDK должна совпадать с `qnn-runtime` приложения.
 
 ```bash
-scripts/build_qnn_model.sh --model best.pt --imgsz 640
+scripts/build_qnn_model.sh --sdk /path/to/QAIRT/2.50.0 --model best.pt --imgsz 640
 ```
 
-Что делает скрипт (всё нужное докачивается при первом запуске):
+Что делает скрипт (необходимые зависимости загружаются при первом запуске):
 
 1. Находит SDK и архитектуру HTP подключённого телефона (`ro.soc.model`).
 2. На macOS ставит через Homebrew **Colima + Docker CLI** (спросит, либо `-y`) и запускает
@@ -138,7 +138,7 @@ ARM-хосте не работает (`No Snapdragon SOC detected`).
 
 ## 3. Подключить к приложению
 
-`scripts/build_qnn_model.sh` уже скопировал бинарь в `app/src/main/assets/` (в
+`scripts/build_qnn_model.sh` уже скопировал файл контекста в `app/src/main/assets/` (в
 `.gitignore`). Поправьте запись `qnn` в `assets/models.json`:
 
 ```json
@@ -170,10 +170,10 @@ adb logcat -s QnnYolo MainActivity
 
 | Сообщение | Причина |
 |---|---|
-| модели нет в выпадающем списке | не arm64-устройство Qualcomm, бинаря нет в assets, либо приложение собрано без SDK (причину пишет `QnnDetector.isSupported` в logcat, тег `QnnDetector`) |
+| модели нет в выпадающем списке | не arm64-устройство Qualcomm либо библиотека собрана без QNN; отсутствие файла контекста вместо этого приводит к ошибке загрузки |
 | `built without the QNN SDK` | не задан `qnn.sdk.dir` или указана не та папка |
-| `dlopen libQnnHtp.so failed` | устройство не arm64 |
-| `contextCreateFromBinary failed: 30001` | неверная конфигурация HTP cache либо бинарь собран под другую HTP-архитектуру/версию QAIRT; пересоберите совпадающим скриптом и runtime |
+| `dlopen libQnnHtp.so failed` | отсутствующий или несовместимый runtime, неверный ABI либо упаковка нативных библиотек; см. инструкцию AAR YoloKit |
+| `contextCreateFromBinary failed: 30001` | неверная конфигурация кеша HTP либо файл контекста собран под другую архитектуру HTP или версию QAIRT; соберите его заново с подходящими настройками и версией SDK |
 | `no compatible QNN backend API version` | заголовки SDK старее runtime-библиотек |
 | `output dims [...] do not match 4+N classes` | число `labels` не совпадает с моделью, либо в графе NMS / другая голова |
 | `unsupported ... tensor type` | тип ввода/вывода вне списка выше |
@@ -190,6 +190,10 @@ adb logcat -s QnnYolo MainActivity
   средние значения каждые 90 кадров). Следующий шаг: resize и letterbox в uint8 сразу во входной тензор.
 
 ## Лицензия
+
+Связанная документация: [приложение](../README.ru.md),
+[YoloKit](https://github.com/gd182/YoloKit),
+[упаковка AAR](https://github.com/gd182/YoloKit/blob/main/docs/AAR.ru.md).
 
 Библиотеки QNN runtime — проприетарные (Qualcomm AI Stack License). Они подтягиваются из
 Maven при сборке и **не** коммитятся в этот репозиторий. Условия распространения задаёт

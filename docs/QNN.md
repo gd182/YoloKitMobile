@@ -3,7 +3,7 @@
 🇷🇺 [Русская версия](QNN.ru.md)
 
 Runs the whole YOLO graph on the Hexagon NPU (HTP) through the **native QNN C API**
-(`app/src/main/cpp/qnn_yolo.cpp`): a pre-compiled *context binary* is loaded once,
+([YoloKit's native runner](../vendor/YoloKit/yolokit/src/main/cpp/qnn_yolo.cpp)): a pre-compiled *context binary* is loaded once,
 then every frame is one `graphExecute`. No LiteRT/TFLite layer, no CPU partitions,
 no on-device graph compilation.
 
@@ -20,20 +20,20 @@ no on-device graph compilation.
 
 | Piece | Where it comes from |
 |---|---|
-| Runtime libs (`libQnnHtp`, `libQnnHtpV*Stub/Skel`, `libQnnSystem`) | Maven `com.qualcomm.qti:qnn-runtime`, version `qnn` in `gradle/libs.versions.toml` |
-| Headers (build time only) | QAIRT SDK, path in `local.properties` |
+| Runtime libs (`libQnnHtp`, `libQnnHtpV*Stub/Skel`, `libQnnSystem`) | Maven `com.qualcomm.qti:qnn-runtime`, version `qnn` in `vendor/YoloKit/gradle/libs.versions.toml` |
+| Headers (build time only) | QAIRT SDK, path in `vendor/YoloKit/local.properties` |
 | Model tools | QAIRT SDK (run by `scripts/build_qnn_model.sh`) |
 | Context binary | one per HTP arch, built by the script |
 
 **The SDK version used to build the binary must equal the runtime version** (`qnn` in
-`libs.versions.toml`, currently `2.50.0`). If your SDK is another version, change `qnn` to
+`vendor/YoloKit/gradle/libs.versions.toml`, currently `2.50.0`). If your SDK is another version, change the library's `qnn` to
 match — otherwise `contextCreateFromBinary` fails.
 
 ## 1. SDK and Gradle
 
 Install the QAIRT SDK from
 <https://www.qualcomm.com/developer/software/qualcomm-ai-engine-direct-sdk> (Qualcomm ID +
-license acceptance). Then in `local.properties` (git-ignored):
+license acceptance). Then in `vendor/YoloKit/local.properties` (git-ignored):
 
 ```
 qnn.sdk.dir=/path/to/Qualcomm/AIStack/QAIRT/2.50.0
@@ -44,8 +44,21 @@ Without it the app builds normally and QNN models are hidden.
 
 ## 2. Build the context binary — one command
 
+For Ubuntu x86_64, use the native script without Docker:
+
 ```bash
-scripts/build_qnn_model.sh --model best.pt --imgsz 640
+scripts/build_qnn_model_ubuntu_x86.sh \
+  --sdk /path/to/QAIRT/2.50.0 --model best.pt --arch v81 --imgsz 640
+```
+
+Replace `v81` with the target device's HTP architecture. The script requires
+Python with venv and the QAIRT SDK. Run it with `--help` for INT8 calibration
+and output options. It saves the binary in `app/src/main/assets/` by default.
+
+For the macOS/container and connected-phone flow:
+
+```bash
+scripts/build_qnn_model.sh --sdk /path/to/QAIRT/2.50.0 --model best.pt --imgsz 640
 ```
 
 What it does (everything is downloaded on the first run):
@@ -146,9 +159,9 @@ The status line shows `NPU · Qualcomm HTP (QNN)`; logcat prints
 
 | Message | Cause |
 |---|---|
-| model missing from the dropdown | not an arm64 Qualcomm device, the binary is not in assets, or the app was built without the SDK (`QnnDetector.isSupported` logs the reason under tag `QnnDetector`) |
+| model missing from the dropdown | not an arm64 Qualcomm device, or the library was built without QNN; a missing binary instead causes a loading error |
 | `built without the QNN SDK` | `qnn.sdk.dir` not set, or wrong folder |
-| `dlopen libQnnHtp.so failed` | not an arm64 device |
+| `dlopen libQnnHtp.so failed` | missing or incompatible runtime, wrong ABI, or native-library packaging; see the YoloKit AAR guide |
 | `contextCreateFromBinary failed: 30001` | invalid HTP cache configuration, or a binary built for another HTP arch / QAIRT version; rebuild with the matching script and runtime |
 | `no compatible QNN backend API version` | SDK headers are older than the runtime libs |
 | `output dims [...] do not match 4+N classes` | `labels` count differs from the model, or the graph includes NMS / another head |
@@ -166,6 +179,10 @@ The status line shows `NPU · Qualcomm HTP (QNN)`; logcat prints
   averages every 90 frames). Next step: resize and letterbox in uint8 straight into the input tensor.
 
 ## Licensing
+
+Related documentation: [sample app](../README.md),
+[YoloKit](https://github.com/gd182/YoloKit), and
+[AAR packaging](https://github.com/gd182/YoloKit/blob/main/docs/AAR.md).
 
 The QNN runtime libraries are proprietary (Qualcomm AI Stack License). They are fetched from
 Maven at build time and are **not** committed to this repository. Redistribution is governed
